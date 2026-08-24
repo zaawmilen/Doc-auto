@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: docauto_user
+          POSTGRES_PASSWORD: docauto_pass
+          POSTGRES_DB: docauto_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U docauto_user -d docauto_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      # Postgres service uses POSTGRES_USER as its init superuser (docker-library/postgres
+      # always grants that role SUPERUSER). Superuser and BYPASSRLS roles skip row-level
+      # security entirely regardless of FORCE ROW LEVEL SECURITY, which would make the
+      # tenant-isolation test pass or fail for the wrong reason. The app must connect as
+      # a separate, non-superuser role — created in the "Create app role" step below —
+      # so RLS is actually exercised the same way it would be against Supabase in prod.
+      DATABASE_URL: postgresql://docauto_app:docauto_pass@localhost:5432/docauto_db
+      TEST_DATABASE_URL: postgresql://docauto_app:docauto_pass@localhost:5432/docauto_db
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-only-access-secret-not-used-anywhere-else
+      JWT_REFRESH_SECRET: ci-only-refresh-secret-not-used-anywhere-else
+      STORAGE_DRIVER: local
+      ALLOW_MOCK_PROCESSING: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Create app role (non-superuser, so RLS is actually enforced)
+        run: |
+          PGPASSWORD=docauto_pass psql -h localhost -U docauto_user -d docauto_db -v ON_ERROR_STOP=1 <<'SQL'
+            CREATE ROLE docauto_app LOGIN PASSWORD 'docauto_pass';
+            GRANT ALL PRIVILEGES ON DATABASE docauto_db TO docauto_app;
+            GRANT CREATE ON SCHEMA public TO docauto_app;
+          SQL
+          # Migrations run as docauto_app below, so it owns every table it creates —
+          # FORCE ROW LEVEL SECURITY still applies to a non-superuser owner, so no
+          # further grants are needed after this.
+
+      - name: Run migrations
+        run: npm run db:migrate
+
+      - name: Run tests
+        run: npm test
