@@ -46,7 +46,9 @@ export async function withTenantContext<T>(
   fn: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => Promise<T>,
 ): Promise<T> {
   return db.transaction(async (tx) => {
-    await tx.execute(sql`SET LOCAL app.tenant_id = ${tenantId}`);
+    // SET LOCAL does not accept bind parameters (Postgres only allows literals
+    // after SET) — use set_config(), a regular function, which does.
+    await tx.execute(sql`SELECT set_config('app.tenant_id', ${tenantId}, true)`);
     return fn(tx);
   });
 }
