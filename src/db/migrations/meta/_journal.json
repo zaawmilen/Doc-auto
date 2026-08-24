@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1783500057565,
+      "tag": "0000_puzzling_talon",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783500068284,
+      "tag": "0001_enable_row_level_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783604926277,
+      "tag": "0002_overconfident_makkari",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787577600000,
+      "tag": "0003_rename_extractions",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787572165970,
+      "tag": "0005_rainy_mastermind",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787572166970,
+      "tag": "0006_add_reprocessed_audit_event",
+      "breakpoints": true
+    }
+  ]
+}

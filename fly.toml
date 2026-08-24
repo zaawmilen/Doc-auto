@@ -1,0 +1,56 @@
+app = "doc-automation-platform"
+primary_region = 'sjc'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[processes]
+  app    = 'node dist/server.js'
+  worker = 'node dist/worker.js'
+
+[env]
+  NODE_ENV               = 'production'
+  PORT                   = '3000'
+  DB_POOL_MAX            = '6'
+  JWT_ACCESS_EXPIRES_IN  = '15m'
+  JWT_REFRESH_EXPIRES_IN = '7d'
+  STORAGE_DRIVER         = 's3'
+
+[deploy]
+  release_command = 'node dist/db/migrate.js'
+
+[http_service]
+  internal_port        = 3000
+  force_https          = true
+  auto_stop_machines   = 'suspend'
+  auto_start_machines  = true
+  min_machines_running = 0
+  processes            = ['app']
+
+  [http_service.concurrency]
+    type       = 'requests'
+    hard_limit = 250
+    soft_limit = 200
+
+# Readiness check — waits for DB + Redis before routing traffic
+[[http_service.checks]]
+  grace_period = '15s'
+  interval     = '15s'
+  method       = 'GET'
+  path         = '/readyz'
+  protocol     = 'http'
+  timeout      = '5s'
+
+# app process VM
+[[vm]]
+  processes = ['app']
+  memory    = '256mb'
+  cpu_kind  = 'shared'
+  cpus      = 1
+
+# worker process VM
+[[vm]]
+  processes = ['worker']
+  memory    = '256mb'
+  cpu_kind  = 'shared'
+  cpus      = 1

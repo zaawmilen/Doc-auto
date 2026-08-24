@@ -1,0 +1,1 @@
+ALTER TYPE "audit_event" ADD VALUE IF NOT EXISTS 'reprocessed';
