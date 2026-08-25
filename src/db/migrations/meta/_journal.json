@@ -43,6 +43,13 @@
       "when": 1787572166970,
       "tag": "0006_add_reprocessed_audit_event",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787980000000,
+      "tag": "0007_fix_rls_null_tenant_context",
+      "breakpoints": true
     }
   ]
 }
