@@ -212,4 +212,93 @@ describeIntegration('documents route (integration, full pipeline)', () => {
     await pool.query('DELETE FROM users WHERE tenant_id = $1', [other.tenant.id]);
     await pool.query('DELETE FROM tenants WHERE id = $1', [other.tenant.id]);
   }, 15_000);
+
+  it('edits an extraction field while pending_review and records the change in the audit log', async () => {
+    const uploadRes = await request(app)
+      .post('/api/v1/documents')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .attach('file', Buffer.from('%PDF-1.4 edit test'), { filename: 'edit.pdf', contentType: 'application/pdf' });
+    const documentId = uploadRes.body.document.id;
+    await waitForStatus(documentId, 'pending_review');
+
+    const editRes = await request(app)
+      .patch(`/api/v1/documents/${documentId}/extraction`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ vendorTaxId: '99-9999999' });
+    expect(editRes.status).toBe(200);
+    expect(editRes.body.extraction.vendorTaxId).toBe('99-9999999');
+
+    const detail = await request(app)
+      .get(`/api/v1/documents/${documentId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(detail.body.document.extraction.vendorTaxId).toBe('99-9999999');
+    const editEvent = detail.body.document.auditLog.find((a: { event: string }) => a.event === 'field_edited');
+    expect(editEvent.payload.changes).toEqual({ vendorTaxId: '99-9999999' });
+  }, 15_000);
+
+  it('rejects an extraction edit once the document has left pending_review', async () => {
+    const uploadRes = await request(app)
+      .post('/api/v1/documents')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .attach('file', Buffer.from('%PDF-1.4 edit-after-approve test'), { filename: 'edit2.pdf', contentType: 'application/pdf' });
+    const documentId = uploadRes.body.document.id;
+    await waitForStatus(documentId, 'pending_review');
+
+    await request(app)
+      .post(`/api/v1/documents/${documentId}/approve`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    const editRes = await request(app)
+      .patch(`/api/v1/documents/${documentId}/extraction`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ vendorTaxId: '00-0000000' });
+    expect(editRes.status).toBe(409);
+    expect(editRes.body.error.code).toBe('INVALID_DOCUMENT_STATUS');
+  }, 15_000);
+
+  it('reprocesses a rejected document: resets to uploaded, re-runs the full pipeline, extraction is fresh', async () => {
+    const uploadRes = await request(app)
+      .post('/api/v1/documents')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .attach('file', Buffer.from('%PDF-1.4 reprocess test'), { filename: 'reprocess.pdf', contentType: 'application/pdf' });
+    const documentId = uploadRes.body.document.id;
+    await waitForStatus(documentId, 'pending_review');
+
+    await request(app)
+      .post(`/api/v1/documents/${documentId}/reject`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'testing reprocess flow' });
+
+    const reprocessRes = await request(app)
+      .post(`/api/v1/documents/${documentId}/reprocess`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(reprocessRes.status).toBe(202);
+    expect(reprocessRes.body.document.status).toBe('uploaded');
+
+    // Runs through the real pipeline again — same deterministic mock data,
+    // so it lands on pending_review again, with a fresh extraction row.
+    const final = await waitForStatus(documentId, 'pending_review');
+    expect(final.docType).toBe('invoice');
+
+    const detail = await request(app)
+      .get(`/api/v1/documents/${documentId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    const events = detail.body.document.auditLog.map((a: { event: string }) => a.event);
+    expect(events).toEqual(expect.arrayContaining(['rejected', 'reprocessed', 'ocr_complete', 'sent_to_review']));
+  }, 15_000);
+
+  it('rejects reprocessing a document that is not failed or rejected', async () => {
+    const uploadRes = await request(app)
+      .post('/api/v1/documents')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .attach('file', Buffer.from('%PDF-1.4 reprocess-invalid test'), { filename: 'reprocess2.pdf', contentType: 'application/pdf' });
+    const documentId = uploadRes.body.document.id;
+    await waitForStatus(documentId, 'pending_review');
+
+    const reprocessRes = await request(app)
+      .post(`/api/v1/documents/${documentId}/reprocess`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(reprocessRes.status).toBe(409);
+    expect(reprocessRes.body.error.code).toBe('INVALID_DOCUMENT_STATUS');
+  }, 15_000);
 });
