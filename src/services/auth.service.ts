@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { db, withTenantContext } from '../db/index.js';
 import { tenants, users } from '../db/schema.js';
 import { hashPassword, comparePassword } from '../lib/password.js';
@@ -70,10 +70,25 @@ export async function register(input: RegisterInput) {
 }
 
 export async function login(input: LoginInput) {
-  const user = await db.query.users.findFirst({ where: eq(users.email, input.email) });
-  const passwordMatch = await comparePassword(input.password, user?.passwordHash ?? DUMMY_HASH);
-  if (!user || !passwordMatch) throw AppError.unauthorized('Invalid email or password');
+  // Looking a user up by email necessarily happens before their tenant is
+  // known, so a normal query would be correctly hidden by RLS regardless of
+  // which tenant the row actually belongs to (see migration 0007's note).
+  // find_user_for_login (migration 0008) is a narrowly-scoped SECURITY
+  // DEFINER function — it returns only the five columns needed here, for at
+  // most one row, and is grantable/callable only by the app's own DB role.
+  const result = await db.execute<{
+    id: string;
+    tenant_id: string;
+    email: string;
+    password_hash: string;
+    role: 'admin' | 'reviewer' | 'viewer';
+  }>(sql`SELECT * FROM find_user_for_login(${input.email})`);
+  const row = result.rows[0];
 
+  const passwordMatch = await comparePassword(input.password, row?.password_hash ?? DUMMY_HASH);
+  if (!row || !passwordMatch) throw AppError.unauthorized('Invalid email or password');
+
+  const user = { id: row.id, tenantId: row.tenant_id, email: row.email, role: row.role };
   const accessToken = signAccessToken({ sub: user.id, tenantId: user.tenantId, email: user.email, role: user.role });
   const refreshToken = await storeRefreshToken({
     userId: user.id,
@@ -81,7 +96,7 @@ export async function login(input: LoginInput) {
     email: user.email,
     role: user.role,
   });
-  return { accessToken, refreshToken, user: { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId } };
+  return { accessToken, refreshToken, user };
 }
 
 export async function refresh(oldTokenId: string) {

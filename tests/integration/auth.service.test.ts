@@ -70,17 +70,7 @@ describeIntegration('auth service (integration)', () => {
     await pool.query('DELETE FROM tenants WHERE slug = $1', [`${tenantSlug}-2`]);
   });
 
-  // login(), refresh(), and logout() below are all blocked on a known,
-  // separately-tracked architectural gap: login() looks a user up by email
-  // before any tenant context can exist, so RLS correctly hides the row
-  // (see the note in src/services/auth.service.ts and migration 0007).
-  // These assert the CORRECT/intended behavior and are marked `.fails` so
-  // CI stays green while the gap is open — once a bootstrap-lookup fix
-  // lands, remove `.fails` from each and they should pass normally. This
-  // deliberately does NOT assert the current broken behavior as if it were
-  // spec.
-
-  it.fails('logs in with correct credentials and returns tokens', async () => {
+  it('logs in with correct credentials and returns tokens', async () => {
     const result = await AuthService.login({ email, password });
 
     expect(result.accessToken).toEqual(expect.any(String));
@@ -97,16 +87,13 @@ describeIntegration('auth service (integration)', () => {
   it('rejects login for a nonexistent email without revealing that distinction', async () => {
     // Same error shape as a wrong password — this is what the dummy-hash
     // compare in auth.service.ts is there to protect (no timing/response
-    // difference between "no such user" and "wrong password"). This one
-    // passes today regardless of the login gap above, since "reject" is
-    // the outcome either way — it just isn't distinguishing the two
-    // reasons for rejection yet, which is exactly what the gap is about.
+    // difference between "no such user" and "wrong password").
     await expect(
       AuthService.login({ email: `nobody-${suffix}@example.test`, password }),
     ).rejects.toMatchObject({ statusCode: 401, message: expect.stringMatching(/invalid email or password/i) });
   });
 
-  it.fails('rotates a refresh token: old token stops working, new one works', async () => {
+  it('rotates a refresh token: old token stops working, new one works', async () => {
     const loginResult = await AuthService.login({ email, password });
     const oldRefreshToken = loginResult.refreshToken;
 
@@ -126,7 +113,7 @@ describeIntegration('auth service (integration)', () => {
     await expect(AuthService.refresh(randomUUID())).rejects.toMatchObject({ statusCode: 401 });
   });
 
-  it.fails('logout revokes the refresh token so it can no longer be used', async () => {
+  it('logout revokes the refresh token so it can no longer be used', async () => {
     const loginResult = await AuthService.login({ email, password });
 
     await AuthService.logout(loginResult.refreshToken);

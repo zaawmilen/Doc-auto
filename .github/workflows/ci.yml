@@ -71,6 +71,21 @@ jobs:
             CREATE ROLE docauto_app LOGIN PASSWORD 'docauto_pass';
             GRANT ALL PRIVILEGES ON DATABASE docauto_db TO docauto_app;
             GRANT CREATE ON SCHEMA public TO docauto_app;
+
+            -- One-time privileged setup for migration 0008's login-lookup
+            -- function (find_user_for_login): a dedicated, no-login role
+            -- with BYPASSRLS, owned by nobody's regular connection, that
+            -- only that one SECURITY DEFINER function runs as. docauto_app
+            -- is granted membership (needed to reassign the function's
+            -- ownership to it in the migration) and CREATE on the schema
+            -- (needed for that reassignment to succeed) — membership alone
+            -- does NOT give docauto_app the BYPASSRLS attribute itself,
+            -- attributes aren't inherited through role membership, only
+            -- privileges are. See migration 0008's header comment for the
+            -- equivalent one-time step in a real (e.g. Supabase) deployment.
+            CREATE ROLE docauto_login_bootstrap NOLOGIN BYPASSRLS;
+            GRANT docauto_login_bootstrap TO docauto_app;
+            GRANT CREATE ON SCHEMA public TO docauto_login_bootstrap;
           SQL
           # Migrations run as docauto_app below, so it owns every table it creates —
           # FORCE ROW LEVEL SECURITY still applies to a non-superuser owner, so no
