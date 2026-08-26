@@ -7,6 +7,7 @@ import { apiRateLimit } from './middleware/rateLimiter.js';
 import { healthRouter } from './routes/health.js';
 import { authRouter } from './routes/auth.js';
 import { documentsRouter } from './routes/documents.js';
+import { tenantRouter } from './routes/tenant.js';
 import { metricsRouter } from './routes/metrics.js';
 import { requestMetrics } from './middleware/metrics.js';
 
@@ -49,6 +50,7 @@ app.use(metricsRouter);
 
 app.use('/api/v1/auth', apiRateLimit, authRouter);
 app.use('/api/v1/documents', apiRateLimit, documentsRouter);
+app.use('/api/v1/tenant', apiRateLimit, tenantRouter);
 
 // ── Error handler — must be last ─────────────────────────────────────────────
 app.use(errorHandler);
