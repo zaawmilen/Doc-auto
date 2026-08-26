@@ -145,12 +145,12 @@ only the external OCR/LLM API calls are.
 - `POST /api/v1/documents/:id/approve`, `/reject` (admin/reviewer only)
 - `PATCH /api/v1/documents/:id/extraction` (edit an extracted field, admin/reviewer only)
 - `POST /api/v1/documents/:id/reprocess` (admin/reviewer only)
+- `GET`/`PATCH /api/v1/tenant` (extraction threshold, webhook URL — admin-only for PATCH)
+- `POST /api/v1/tenant/webhook-secret/rotate` (admin-only; returns the new secret once)
 - `GET /healthz`, `GET /readyz`, `GET /metrics`
 
-Not yet implemented: tenant-config endpoints (per-tenant confidence threshold and
-webhook URL/secret are stored in the schema but not yet editable via the API — currently
-requires a direct DB update, as the tests do), and a live deployment (Fly.io config
-exists but hasn't been deployed from this environment).
+Not yet implemented: a live deployment (Fly.io config exists but hasn't been deployed
+from this environment).
 
 ## Test coverage
 
