@@ -64,6 +64,13 @@ instead of `bidder` / `seller` / `admin`).
   full pipeline under a new run id) — see `src/routes/documents.ts`.
 - **Append-only audit log** (`src/services/audit.service.ts`) — every status
   transition writes a row; nothing is ever updated or deleted.
+- **Webhook delivery** (`src/lib/webhooks.ts`, `src/workers/webhook.worker.ts`) — fires
+  when a document reaches `approved` or `rejected` (auto-approve or manual). HMAC-SHA256
+  signed (`X-Webhook-Signature`), 10s timeout, and a self-contained retry/dead-letter
+  scheme: attempt numbering comes from how many `webhook_deliveries` rows already exist
+  for that document, not from BullMQ's own retry counter — keeps the escalation logic
+  fully in application state and easy to test without waiting through real backoff delays.
+  Skipped entirely (no job enqueued) if a tenant has no `webhookUrl` configured.
 - **CI** (`.github/workflows/ci.yml`) — typecheck, migrate, and the full test suite
   against real Postgres + Redis service containers on every push/PR, connecting as a
   dedicated non-superuser role so RLS is actually exercised the same way it would be
@@ -140,10 +147,10 @@ only the external OCR/LLM API calls are.
 - `POST /api/v1/documents/:id/reprocess` (admin/reviewer only)
 - `GET /healthz`, `GET /readyz`, `GET /metrics`
 
-Not yet implemented: webhook delivery (the queue is declared in `src/queues/index.ts`
-but no worker consumes it yet), tenant-config endpoints (per-tenant confidence
-threshold is stored in the schema but not yet editable via the API), and a live
-deployment (Fly.io config exists but hasn't been deployed from this environment).
+Not yet implemented: tenant-config endpoints (per-tenant confidence threshold and
+webhook URL/secret are stored in the schema but not yet editable via the API — currently
+requires a direct DB update, as the tests do), and a live deployment (Fly.io config
+exists but hasn't been deployed from this environment).
 
 ## Test coverage
 
