@@ -1,8 +1,8 @@
 import { eq, and, desc, count } from 'drizzle-orm';
 import { withTenantContext } from '../db/index.js';
-import { documents, documentsExtraction, documentAuditLog } from '../db/schema.js';
+import { documents, documentsExtraction, documentAuditLog, tenants } from '../db/schema.js';
 import { uploadDocument, getPresignedUrl } from '../lib/storage.js';
-import { ocrQueue } from '../queues/index.js';
+import { ocrQueue, webhookQueue } from '../queues/index.js';
 import { ocrJobId } from '../queues/jobIds.js';
 import { randomUUID } from 'node:crypto';
 import { queueJobsEnqueuedTotal } from '../lib/metrics.js';
@@ -11,6 +11,16 @@ import { AppError } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 import type { z } from 'zod';
 import type { editExtractionSchema } from '../validators/documents.js';
+
+async function enqueueWebhookIfConfigured(tenantId: string, documentId: string): Promise<void> {
+  const tenant = await withTenantContext(tenantId, async (tx) => tx.query.tenants.findFirst({
+    where: eq(tenants.id, tenantId),
+    columns: { webhookUrl: true },
+  }));
+  if (!tenant?.webhookUrl) return;
+  await webhookQueue.add('webhook', { documentId, tenantId });
+  queueJobsEnqueuedTotal.inc({ queue: 'webhook-jobs' });
+}
 
 export async function uploadNewDocument(params: {
   tenantId: string;
@@ -137,7 +147,7 @@ export async function approveDocument(params: {
   documentId: string;
   actorId: string;
 }) {
-  return withTenantContext(params.tenantId, async (tx) => {
+  const updated = await withTenantContext(params.tenantId, async (tx) => {
     const document = await tx.query.documents.findFirst({
       where: and(eq(documents.id, params.documentId), eq(documents.tenantId, params.tenantId)),
       columns: { id: true, status: true },
@@ -162,6 +172,11 @@ export async function approveDocument(params: {
     });
     return updated;
   });
+
+  // Enqueued after the transaction has committed, not from inside it — a
+  // webhook job for an update that could still roll back would be wrong.
+  await enqueueWebhookIfConfigured(params.tenantId, params.documentId);
+  return updated;
 }
 
 export async function rejectDocument(params: {
@@ -170,7 +185,7 @@ export async function rejectDocument(params: {
   actorId: string;
   reason: string;
 }) {
-  return withTenantContext(params.tenantId, async (tx) => {
+  const updated = await withTenantContext(params.tenantId, async (tx) => {
     const document = await tx.query.documents.findFirst({
       where: and(eq(documents.id, params.documentId), eq(documents.tenantId, params.tenantId)),
       columns: { id: true, status: true },
@@ -196,6 +211,9 @@ export async function rejectDocument(params: {
     });
     return updated;
   });
+
+  await enqueueWebhookIfConfigured(params.tenantId, params.documentId);
+  return updated;
 }
 
 export async function editDocumentExtraction(params: {

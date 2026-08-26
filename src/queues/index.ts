@@ -24,6 +24,11 @@ const defaultJobOptions = {
   backoff: { type: 'exponential' as const, delay: 2_000 },
 };
 
+// Named export so the webhook worker's own dead-letter logic (see
+// src/workers/webhook.worker.ts) references the same number rather than a
+// second hardcoded copy that could silently drift from this one.
+export const WEBHOOK_MAX_ATTEMPTS = defaultJobOptions.attempts;
+
 export const ocrQueue = new Queue('ocr-jobs', { connection, defaultJobOptions });
 export const extractionQueue = new Queue('extraction-jobs', { connection, defaultJobOptions });
 // Week 7-8 — declared now so document.service.ts / approval endpoints can enqueue

@@ -2,11 +2,12 @@ import 'dotenv/config';
 import { logger } from './lib/logger.js';
 import { createOcrWorker } from './workers/ocr.worker.js';
 import { createExtractionWorker } from './workers/extraction.worker.js';
+import { createWebhookWorker } from './workers/webhook.worker.js';
 
 async function startWorker() {
   logger.info('Starting worker process');
-  const workers = [createOcrWorker(), createExtractionWorker()];
-  logger.info({ queues: ['ocr-jobs', 'extraction-jobs'] }, 'All workers started');
+  const workers = [createOcrWorker(), createExtractionWorker(), createWebhookWorker()];
+  logger.info({ queues: ['ocr-jobs', 'extraction-jobs', 'webhook-jobs'] }, 'All workers started');
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Worker shutdown signal received');

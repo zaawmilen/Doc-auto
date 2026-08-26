@@ -4,11 +4,13 @@ import { withTenantContext } from '../db/index.js';
 import { documents, documentsExtraction, tenants } from '../db/schema.js';
 import { getQueueConnection } from '../queues/index.js';
 import type { ExtractionJob } from '../queues/index.js';
+import { webhookQueue } from '../queues/index.js';
 import { classifyDocument, extractInvoice } from '../lib/anthropic.js';
 import { evaluateExtraction } from '../lib/decision-engine.js';
 import { writeAuditLog } from '../services/audit.service.js';
 import { logger } from '../lib/logger.js';
 import { workerJobDurationSeconds, workerJobsTotal } from '../lib/metrics.js';
+import { queueJobsEnqueuedTotal } from '../lib/metrics.js';
 
 export function createExtractionWorker() {
   const connection = getQueueConnection();
@@ -133,6 +135,10 @@ export function createExtractionWorker() {
             newStatus: 'approved',
             payload: { threshold, minConfidence: decision.minConfidence, lineItemsSum: decision.lineItemsSum },
           });
+          if (tenant?.webhookUrl) {
+            await webhookQueue.add('webhook', { documentId, tenantId });
+            queueJobsEnqueuedTotal.inc({ queue: 'webhook-jobs' });
+          }
         } else {
           await withTenantContext(tenantId, async (tx) => {
             await tx.update(documents).set({ status: 'pending_review', updatedAt: new Date() }).where(eq(documents.id, documentId));
